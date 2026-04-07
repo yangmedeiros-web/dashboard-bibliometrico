@@ -4,114 +4,92 @@ import networkx as nx
 from pyvis.network import Network
 import streamlit.components.v1 as components
 
-# Configuração da página
 st.set_page_config(layout="wide", page_title="Plataforma Celso Furtado")
 
-# Cache para carregar os dados rapidamente
 @st.cache_data
 def carregar_dados():
     return pd.read_excel('banco_autores_assuntos.xlsx')
 
 df = carregar_dados()
 
-# --- NOVO CABEÇALHO ---
 st.title("🏛️ Plataforma Celso Furtado")
-st.markdown("### Dashboard de Análise Bibliométrica e Cruzamento de Dados")
+st.markdown("### Análise Bibliométrica e Repositório Digital")
 st.divider()
 
-# Adicionamos uma 5ª aba para a Rede de Conhecimento
 aba1, aba2, aba3, aba4, aba5 = st.tabs([
-    "1. Top Trabalhos por Autor", 
-    "2. Top Autores por Trabalho", 
-    "3. Trabalhos mais densos por Área", 
-    "4. Autores mais citados por Área",
-    "5. 🕸️ Rede de Conhecimento (Grafos)"
+    "1. Trabalhos por Autor", 
+    "2. Autores por Trabalho", 
+    "3. Densidade por Área", 
+    "4. Citações por Área",
+    "5. 🕸️ Rede de Conhecimento"
 ])
 
+# Configuração para as tabelas exibirem links clicáveis
+config_link = {
+    "Link do Trabalho": st.column_config.LinkColumn("Link Original", display_text="Acessar Documento")
+}
+
 with aba1:
-    st.subheader("Trabalhos que mais citaram um Autor específico")
-    busca_autor = st.text_input("Digite o nome ou sobrenome do Autor (ex: SILVA):", key="busca_autor")
-    
+    st.subheader("Trabalhos que mais citaram um Autor")
+    busca_autor = st.text_input("Digite o nome do Autor:", key="b1")
     if busca_autor:
-        df_filtrado = df[df['Autor'].str.contains(busca_autor, case=False, na=False)]
-        if not df_filtrado.empty:
-            top10_trab = df_filtrado['Título do Trabalho'].value_counts().head(10).reset_index()
-            top10_trab.columns = ['Título do Trabalho', 'Qtd. de Citações a este Autor']
-            st.dataframe(top10_trab, use_container_width=True)
-        else:
-            st.warning("Nenhum autor encontrado com esse nome.")
+        df_f = df[df['Autor'].str.contains(busca_autor, case=False, na=False)]
+        if not df_f.empty:
+            # Agrupamos por Título e Link para manter a relação
+            res = df_f.groupby(['Título do Trabalho', 'Link do Trabalho']).size().reset_index(name='Citações')
+            res = res.sort_values('Citações', ascending=False).head(10)
+            st.dataframe(res, use_container_width=True, column_config=config_link)
 
 with aba2:
-    st.subheader("Autores mais citados em um Trabalho específico")
-    lista_trabalhos = sorted(df['Título do Trabalho'].dropna().unique())
-    trabalho_selecionado = st.selectbox("Selecione ou digite o Título do Trabalho:", [""] + lista_trabalhos)
-    
-    if trabalho_selecionado:
-        df_filtrado = df[df['Título do Trabalho'] == trabalho_selecionado]
-        top10_autores = df_filtrado['Autor'].value_counts().head(10).reset_index()
-        top10_autores.columns = ['Autor', 'Qtd. de Citações no Trabalho']
-        st.dataframe(top10_autores, use_container_width=True)
+    st.subheader("Autores mais citados em um Trabalho")
+    lista_t = sorted(df['Título do Trabalho'].dropna().unique())
+    selecionado = st.selectbox("Selecione o Trabalho:", [""] + lista_t)
+    if selecionado:
+        # Mostra o link do trabalho selecionado em destaque
+        link_atual = df[df['Título do Trabalho'] == selecionado]['Link do Trabalho'].iloc[0]
+        if link_atual:
+            st.link_button("🔗 Abrir Trabalho Original no Repositório", link_atual)
+            
+        df_f = df[df['Título do Trabalho'] == selecionado]
+        res = df_f['Autor'].value_counts().head(15).reset_index()
+        res.columns = ['Autor', 'Qtd. de Citações']
+        st.dataframe(res, use_container_width=True)
 
 with aba3:
-    st.subheader("Trabalhos com maior volume de referências em uma Área")
-    # Aqui o código lerá automaticamente "Grande Área" se você tiver implementado a taxonomia, 
-    # ou "Assunto" se tiver mantido o formato original.
-    coluna_area = 'Grande Área' if 'Grande Área' in df.columns else 'Assunto'
-    
-    lista_areas = sorted(df[coluna_area].dropna().unique())
-    area_selecionada_3 = st.selectbox("Selecione a Área de Estudo:", [""] + lista_areas, key="area3")
-    
-    if area_selecionada_3:
-        df_filtrado = df[df[coluna_area] == area_selecionada_3]
-        top10_trab_area = df_filtrado['Título do Trabalho'].value_counts().head(10).reset_index()
-        top10_trab_area.columns = ['Título do Trabalho', 'Total de Referências Mapeadas']
-        st.dataframe(top10_trab_area, use_container_width=True)
+    st.subheader("Trabalhos com maior volume de referências")
+    col_area = 'Grande Área' if 'Grande Área' in df.columns else 'Assunto'
+    area = st.selectbox("Selecione a Área:", [""] + sorted(df[col_area].unique()), key="b3")
+    if area:
+        df_f = df[df[col_area] == area]
+        res = df_f.groupby(['Título do Trabalho', 'Link do Trabalho']).size().reset_index(name='Total de Referências')
+        res = res.sort_values('Total de Referências', ascending=False).head(10)
+        st.dataframe(res, use_container_width=True, column_config=config_link)
 
 with aba4:
-    st.subheader("Autores mais citados dentro de uma Área específica")
-    area_selecionada_4 = st.selectbox("Selecione a Área de Estudo:", [""] + lista_areas, key="area4")
-    
-    if area_selecionada_4:
-        df_filtrado = df[df[coluna_area] == area_selecionada_4]
-        top10_autores_area = df_filtrado['Autor'].value_counts().head(10).reset_index()
-        top10_autores_area.columns = ['Autor', 'Qtd. de Citações nesta Área']
-        st.dataframe(top10_autores_area, use_container_width=True)
+    st.subheader("Autores mais citados por Área")
+    area4 = st.selectbox("Selecione a Área:", [""] + sorted(df[col_area].unique()), key="b4")
+    if area4:
+        df_f = df[df[col_area] == area4]
+        res = df_f['Autor'].value_counts().head(10).reset_index()
+        st.dataframe(res, use_container_width=True)
 
-# --- NOVA ABA DE GRAFOS INTERATIVOS ---
 with aba5:
     st.subheader("Teia de Autores e Trabalhos")
-    st.markdown("Selecione um Trabalho para visualizar visualmente a rede de autores que compõem sua base teórica.")
-    
-    lista_trabalhos_grafo = sorted(df['Título do Trabalho'].dropna().unique())
-    trabalho_rede = st.selectbox("Escolha um Trabalho:", [""] + lista_trabalhos_grafo, key="grafo_trab")
-    
+    trabalho_rede = st.selectbox("Escolha um Trabalho para o Grafo:", [""] + lista_t, key="g1")
     if trabalho_rede:
+        link_rede = df[df['Título do Trabalho'] == trabalho_rede]['Link do Trabalho'].iloc[0]
+        if link_rede:
+            st.info(f"Visualizando rede para: {trabalho_rede}")
+            st.link_button("Ir para o PDF original", link_rede)
+            
         df_rede = df[df['Título do Trabalho'] == trabalho_rede]
-        
-        # Criação do objeto do grafo visual
         net = Network(height='500px', width='100%', bgcolor='#ffffff', font_color='black')
-        
-        # Cria o nó central (O Trabalho acadêmico) em tamanho maior e cor de destaque (Vermelho)
-        net.add_node(trabalho_rede, label="O Trabalho", title=trabalho_rede, color="#FF4B4B", size=35)
-        
-        # Coleta os autores únicos daquele trabalho
-        autores_unicos = df_rede['Autor'].unique()
-        
-        # Adiciona os autores (bolinhas azuis) e liga eles ao trabalho com uma linha (edge)
-        for autor in autores_unicos:
-            if str(autor).strip() != "":
+        net.add_node(trabalho_rede, label="Trabalho", title=trabalho_rede, color="#FF4B4B", size=30)
+        for autor in df_rede['Autor'].unique():
+            if str(autor).strip():
                 net.add_node(autor, label=autor, title=autor, color="#0068C9", size=15)
                 net.add_edge(trabalho_rede, autor)
-            
-        # Adiciona uma "física" suave para os nós se organizarem de forma orgânica
-        net.repulsion(node_distance=150, spring_length=100)
-        
-        # Salva o grafo em um arquivo HTML temporário e lê para jogar na tela do Streamlit
-        try:
-            path = "grafo_rede.html"
-            net.save_graph(path)
-            with open(path, 'r', encoding='utf-8') as f:
-                html_data = f.read()
-            components.html(html_data, height=515)
-        except Exception as e:
-            st.error(f"Erro ao gerar a visualização: {e}")
+        net.repulsion(node_distance=150)
+        net.save_graph("grafo.html")
+        with open("grafo.html", 'r', encoding='utf-8') as f:
+            components.html(f.read(), height=520)
